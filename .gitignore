@@ -29,5 +29,6 @@ pyvenv.cfg
 .venv
 pip-selfcheck.json
 data-[0-9]*/
+data-[a-z]*-[0-9]*/
 
 # End of https://www.toptal.com/developers/gitignore/api/venv,jupyternotebooks
