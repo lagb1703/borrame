@@ -135,6 +135,9 @@ class Layer:
     def export(self)->str:
         return f"{self.name}-{self.neurons}-{self.activacion.__name__}-{self.derivada.__name__}"
     
+    def __str__(self)->str:
+        return f"{self.name}-{self.neurons}-{self.activacion.__name__}-{self.derivada.__name__}"
+    
     @staticmethod
     def load(layer: str)->'Layer':
         name, neurons_str, activationName, derivadaName = layer.split("-")
@@ -207,7 +210,7 @@ class Sequential:
         internal = []
         for i in layers.split("\n"):
             internal.append(Layer.load(i))
-        return Sequential(internal)
+        return Sequential(*internal)
     
 def __evaluate(neu, x_sample: np.ndarray, z, sequential, w, b):
     neu[0] = x_sample
