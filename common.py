@@ -24,18 +24,16 @@ def getBatch(
     labels: Tuple[str, str], 
     size: int, 
     workerNumber: int,
-    split: Tuple[int, int], 
+    split: int, 
     shape=(224,224), 
     label: str = "train",
     tqdmDisable: bool = True,
     classNumber = 1000):
-    shard, index = split
     wbw = batchSize//workerNumber
     newShape = shape[0]*shape[1]
     x = np.zeros((wbw, newShape))
     y = np.zeros((wbw, classNumber))
-    dataset = ds
-    dataset = dataset.skip(index*workerNumber)
+    dataset = ds.skip(split*workerNumber)
     size = size // workerNumber
     try:
         folder = os.path.join('.', f'data-{label}-{wbw}')
@@ -47,8 +45,8 @@ def getBatch(
             os.mkdir(xFolder)
             os.mkdir(yFolder)
         for i in tqdm(range(math.floor(size/batchSize)), disable=tqdmDisable, desc="batch"):
-            path_x = os.path.join(xFolder, f"batch-{shard}-{i*(index+1)}.npy")
-            path_y = os.path.join(yFolder, f"batch-{shard}-{i*(index+1)}.npy")
+            path_x = os.path.join(xFolder, f"batch-{i*(split+1)}.npy")
+            path_y = os.path.join(yFolder, f"batch-{i*(split+1)}.npy")
             if os.path.exists(path_x) and os.path.exists(path_y):
                 x = np.load(path_x)
                 y = np.load(path_y)
@@ -75,8 +73,6 @@ def getBatch(
             np.save(path_y, y)
             dataset = dataset.skip(wbw)
             yield (x, y)
-            x = np.zeros((wbw, newShape))
-            y = np.zeros((wbw, classNumber))
     except Exception as e:
         print(e)
         yield (x, y)
