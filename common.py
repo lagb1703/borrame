@@ -34,7 +34,8 @@ def getBatch(
     newShape = shape[0]*shape[1]
     x = np.zeros((wbw, newShape))
     y = np.zeros((wbw, classNumber))
-    dataset = ds.shard(num_shards=shard, index=index)
+    dataset = ds
+    dataset = dataset.skip(index*workerNumber)
     size = size // workerNumber
     try:
         folder = os.path.join('.', f'data-{label}-{wbw}')
