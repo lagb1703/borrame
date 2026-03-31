@@ -33,7 +33,7 @@ def getBatch(
     newShape = shape[0]*shape[1]
     x = np.zeros((wbw, newShape))
     y = np.zeros((wbw, classNumber))
-    dataset = ds.skip(split*workerNumber)
+    dataset = ds.skip(split*wbw)
     size = size // workerNumber
     try:
         folder = os.path.join('.', f'data-{label}-{wbw}')
@@ -44,7 +44,7 @@ def getBatch(
             os.mkdir(folder)
             os.mkdir(xFolder)
             os.mkdir(yFolder)
-        for i in tqdm(range(math.floor(size/batchSize)), disable=tqdmDisable, desc="batch"):
+        for i in tqdm(range(math.ceil(size/batchSize)), disable=tqdmDisable, desc="batch"):
             path_x = os.path.join(xFolder, f"batch-{i*(split+1)}.npy")
             path_y = os.path.join(yFolder, f"batch-{i*(split+1)}.npy")
             if os.path.exists(path_x) and os.path.exists(path_y):
