@@ -4,9 +4,7 @@ from typing import Tuple, List, Callable, Any
 import os
 import math
 from tqdm import tqdm
-import traceback
 from socket import socket
-import time
 
 def downloadDataset(dataset: str, splitName: str):
     token = os.getenv("token")
