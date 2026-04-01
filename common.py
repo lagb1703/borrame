@@ -27,52 +27,36 @@ def getBatch(
     label: str = "train",
     tqdmDisable: bool = True,
     classNumber = 1000):
-    wbw = batchSize//workerNumber
-    newShape = shape[0]*shape[1]
-    x = np.zeros((wbw, newShape))
-    y = np.zeros((wbw, classNumber))
-    dataset = ds.skip(split*wbw)
-    size = size // workerNumber
-    try:
-        folder = os.path.join('.', f'data-{label}-{wbw}')
-        img, label_img = labels
-        xFolder = os.path.join(folder, 'x')
-        yFolder = os.path.join(folder, 'y')
-        if not os.path.exists(folder):
-            os.mkdir(folder)
-            os.mkdir(xFolder)
-            os.mkdir(yFolder)
-        for i in tqdm(range(math.ceil(size/batchSize)), disable=tqdmDisable, desc="batch"):
-            path_x = os.path.join(xFolder, f"batch-{i*(split+1)}.npy")
-            path_y = os.path.join(yFolder, f"batch-{i*(split+1)}.npy")
-            if os.path.exists(path_x) and os.path.exists(path_y):
-                x = np.load(path_x)
-                y = np.load(path_y)
-                dataset = dataset.skip(wbw)
-                yield (x, y)
-                continue
-            for j, element in enumerate(dataset.take(wbw)):
-                image = element[img].resize(shape)
-                image_label = element[label_img]
-                image = np.array(image, dtype=np.float32)
-                if image.ndim == 3 and image.shape[2] >= 3:
-                    image = (
-                        image[:, :, 0] * 0.299 +
-                        image[:, :, 1] * 0.587 +
-                        image[:, :, 2] * 0.114
-                    ) / 255.0
-                elif image.ndim == 2:
-                    image = image / 255.0
-                else:
-                    image = np.mean(image, axis=2) / 255.0 if image.ndim == 3 else image / 255.0
-                x[j] = image.reshape((newShape))
-                y[j] = one_hot_encode(image_label, classNumber)
-            np.save(path_x, x)
-            np.save(path_y, y)
-            dataset = dataset.skip(wbw)
-            yield (x, y)
-    except Exception as e:
-        print(e)
+    wbw = batchSize // workerNumber 
+    newShape = shape[0] * shape[1]
+    totalSteps = math.ceil(size / batchSize)
+    img_key, label_key = labels
+    folder = os.path.join('.', f'data-{label}-shard{split}')
+    xFolder = os.path.join(folder, 'x')
+    yFolder = os.path.join(folder, 'y')
+    if not os.path.exists(xFolder): os.makedirs(xFolder)
+    if not os.path.exists(yFolder): os.makedirs(yFolder)
+    for i in tqdm(range(totalSteps), disable=tqdmDisable, desc=f"Shard {split} Batches"):
+        path_x = os.path.join(xFolder, f"batch-{i}.npy")
+        path_y = os.path.join(yFolder, f"batch-{i}.npy")
+        if os.path.exists(path_x) and os.path.exists(path_y):
+            yield (np.load(path_x), np.load(path_y))
+            continue
+        offset = (i * batchSize) + (split * wbw)
+        current_shard_ds = ds.skip(offset).take(wbw)
+        x = np.zeros((wbw, newShape), dtype=np.float32)
+        y = np.zeros((wbw, classNumber), dtype=np.float32)
+        for j, element in enumerate(current_shard_ds):
+            image = element[img_key].resize(shape)
+            image = np.array(image, dtype=np.float32)
+            if image.ndim == 3:
+                image = (image @ [0.299, 0.587, 0.114]) / 255.0
+            else:
+                image = image / 255.0
+            x[j] = image.flatten()
+            y[j] = one_hot_encode(element[label_key], classNumber)
+        np.save(path_x, x)
+        np.save(path_y, y)
         yield (x, y)
         
 def sigmoidea(x: np.ndarray) -> np.ndarray:
