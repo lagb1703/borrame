@@ -1,23 +1,26 @@
-from datasets import load_dataset, load_dataset_builder
+from datasets import load_dataset, load_dataset_builder, IterableDataset # type: ignore
 import numpy as np
-from typing import Tuple, List, Callable, Any
+import numpy.typing as npt
+from typing import Tuple, List, Callable
 import os
 import math
 from tqdm import tqdm
 from socket import socket
 
-def downloadDataset(dataset: str, splitName: str):
+def downloadDataset(dataset: str, splitName: str)-> Tuple[IterableDataset, int]:
     token = os.getenv("token")
     ds = load_dataset(dataset, split=splitName, token=token, streaming=True)
     builder = load_dataset_builder(dataset, token=token,)
-    total = builder.info.splits[splitName].num_examples
+    total: int = 0
+    if builder.info.splits[splitName].num_examples: # type: ignore
+        total = int(builder.info.splits[splitName].num_examples) # type: ignore
     return (ds, total)
 
-def one_hot_encode(labels, num_classes=10):
+def one_hot_encode(labels: List[int] | npt.NDArray[np.int_], num_classes: int=10)-> npt.NDArray[np.float64]:
     return np.eye(num_classes)[labels]
 
 def getBatch(
-    ds, 
+    ds: IterableDataset, 
     batchSize:int, 
     labels: Tuple[str, str], 
     size: int, 
@@ -43,58 +46,58 @@ def getBatch(
             yield (np.load(path_x), np.load(path_y))
             continue
         offset = (i * batchSize) + (split * wbw)
-        current_shard_ds = ds.skip(offset).take(wbw)
+        current_shard_ds = ds.skip(offset).take(wbw) # type: ignore
         x = np.zeros((wbw, newShape), dtype=np.float32)
         y = np.zeros((wbw, classNumber), dtype=np.float32)
-        for j, element in enumerate(current_shard_ds):
-            image = element[img_key].resize(shape)
+        for j, element in enumerate(current_shard_ds): # type: ignore
+            image = element[img_key].resize(shape) # type: ignore
             image = np.array(image, dtype=np.float32)
             if image.ndim == 3:
                 image = (image @ [0.299, 0.587, 0.114]) / 255.0
             else:
                 image = image / 255.0
             x[j] = image.flatten()
-            y[j] = one_hot_encode(element[label_key], classNumber)
+            y[j] = one_hot_encode(element[label_key], classNumber) # type: ignore
         np.save(path_x, x)
         np.save(path_y, y)
         yield (x, y)
         
-def sigmoidea(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def sigmoidea(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return 1.0 / (1.0 + np.exp(-x))
 
-def devSigmoidea(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def devSigmoidea(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     s = sigmoidea(x)
     return s * (1.0 - s)
 
-def relu(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def relu(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return np.maximum(x, 0.0)
 
-def devRelu(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def devRelu(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     return np.where(x > 0, 1.0, 0.0)
 
-def softmax(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def softmax(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     exp_x = np.exp(x - np.max(x))
     return exp_x / np.sum(exp_x)
 
-def devSoftmax(x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def devSoftmax(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     s = softmax(x)
     s_vec = s.reshape(-1)
     jacobian_matrix = np.diag(s_vec) - np.outer(s_vec, s_vec)
     return jacobian_matrix
 
-def mse(predicted: np.ndarray[float, np.dtype[Any]], actually: np.ndarray[float, np.dtype[Any]]) -> float:
+def mse(predicted: npt.NDArray[np.float64], actually: npt.NDArray[np.float64]) -> float:
     return float(np.mean((predicted - actually) ** 2))
 
-def devMse(predicted: np.ndarray[float, np.dtype[Any]], actually: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def devMse(predicted: npt.NDArray[np.float64], actually: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     n = predicted.size
     return np.where(n > 0, (2.0 / n) * (predicted - actually), np.zeros_like(predicted))
 
-def lostEntropy(predicted: np.ndarray[float, np.dtype[Any]], actually: np.ndarray[float, np.dtype[Any]]) -> float:
+def lostEntropy(predicted: npt.NDArray[np.float64], actually: npt.NDArray[np.float64]) -> float:
     eps = 1e-7
     p = np.clip(predicted, eps, 1.0 - eps)
     return -float(np.sum(actually * np.log(p)))
 
-def devLostEntropy(predicted: np.ndarray[float, np.dtype[Any]], actually: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
+def devLostEntropy(predicted: npt.NDArray[np.float64], actually: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     eps = 1e-7
     p = np.clip(predicted, eps, 1.0 - eps)
     return -(actually / p)
@@ -103,12 +106,12 @@ class Layer:
     def __init__(
             self,
             neurons: int,
-            activation: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]],
-            derivada: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]],
+            activation: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
+            derivada: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
             name: str):
         self.neurons: int = neurons
-        self.activacion: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]] = activation
-        self.derivada: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]] = derivada
+        self.activacion: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]] = activation
+        self.derivada: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]] = derivada
         self.name: str = name
         
     def export(self)->str:
@@ -121,8 +124,8 @@ class Layer:
     def load(layer: str)->'Layer':
         name, neurons_str, activationName, derivadaName = layer.split("-")
         neurons = int(neurons_str)
-        activation: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]] | None = None
-        derivada: Callable[[np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]] = None
+        activation: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]] | None = None
+        derivada: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]] | None = None
         match(activationName):
             case "sigmoidea":
                 activation = sigmoidea
@@ -175,11 +178,11 @@ class Sequential:
     
     def __forward(
         self, 
-        neu: List[None | np.ndarray[float, np.dtype[Any]]], 
-        x_sample: np.ndarray[float, np.dtype[Any]], 
-        z: List[None | np.ndarray[float, np.dtype[Any]]], 
-        w: np.ndarray[float, np.dtype[Any]], 
-        b: np.ndarray[float, np.dtype[Any]])->None:
+        neu: List[None | npt.NDArray[np.float64]], 
+        x_sample: npt.NDArray[np.float64], 
+        z: List[None | npt.NDArray[np.float64]], 
+        w: List[npt.NDArray[np.float64]], 
+        b: List[npt.NDArray[np.float64]])->None:
         neu[0] = x_sample
         for i in range(1, len(self)):
             z[i] = np.dot(neu[i - 1], w[i - 1]) + b[i] # type: ignore
@@ -187,25 +190,25 @@ class Sequential:
 
     def __backward(
         self, 
-        dEdz: List[None | np.ndarray[float, np.dtype[Any]]], 
-        z: List[None | np.ndarray[float, np.dtype[Any]]], 
-        w: List[np.ndarray[float, np.dtype[Any]]])->None:
+        dEdz: List[None | npt.NDArray[np.float64]], 
+        z: List[None | npt.NDArray[np.float64]], 
+        w: List[npt.NDArray[np.float64]])->None:
         for i in range(len(self) - 2, 0, -1):
             dEdz[i] = (dEdz[i+1] @ w[i].T) * self[i].derivada(z[i]) # type: ignore
 
     def batch(
         self, 
-        x_b: np.ndarray[float, np.dtype[Any]], 
-        y_b: np.ndarray[float, np.dtype[Any]], 
-        w: List[np.ndarray[float, np.dtype[Any]]], 
-        b: List[np.ndarray[float, np.dtype[Any]]], 
-        w_grad_batch: List[np.ndarray[float, np.dtype[Any]]], 
-        b_grad_batch: List[np.ndarray[float, np.dtype[Any]]], 
-        devError: Callable[[np.ndarray[float, np.dtype[Any]], np.ndarray[float, np.dtype[Any]]], np.ndarray[float, np.dtype[Any]]]):
-        neu: List[None | np.ndarray[float, np.dtype[Any]]] = [None] * len(self)
-        z: List[None | np.ndarray[float, np.dtype[Any]]] = [None] * len(self)
+        x_b: npt.NDArray[np.float64], 
+        y_b: npt.NDArray[np.float64], 
+        w: List[npt.NDArray[np.float64]], 
+        b: List[npt.NDArray[np.float64]], 
+        w_grad_batch: List[npt.NDArray[np.float64]], 
+        b_grad_batch: List[npt.NDArray[np.float64]], 
+        devError: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], npt.NDArray[np.float64]]):
+        neu: List[None | npt.NDArray[np.float64]] = [None] * len(self)
+        z: List[None | npt.NDArray[np.float64]] = [None] * len(self)
         self.__forward(neu, x_b, z, w, b)
-        dEdz: List[None | np.ndarray[float, np.dtype[Any]]] = [None] * len(self)
+        dEdz: List[None | npt.NDArray[np.float64]] = [None] * len(self)
         de = devError(neu[-1], y_b) # type: ignore
         if de.shape == (1,):
             dEdz[-1] = de * self[-1].derivada(z[-1]) # type: ignore
@@ -213,28 +216,28 @@ class Sequential:
             dEdz[-1] = de @ self[-1].derivada(z[-1]) # type: ignore
         self.__backward(dEdz, z, w)
         for i in range(len(self) - 1):
-            w_grad_sample: np.ndarray[float, np.dtype[Any]] = np.outer(neu[i], dEdz[i+1]) # type: ignore
+            w_grad_sample: npt.NDArray[np.float64] = np.outer(neu[i], dEdz[i+1]) # type: ignore
             w_grad_batch[i] += w_grad_sample
-            b_grad_batch[i+1] += dEdz[i+1]
+            b_grad_batch[i+1] += dEdz[i+1] # type: ignore
 
 class Model:
     def __init__(
             self,
             sequential: Sequential,
-            w: List[np.ndarray[float, np.dtype[Any]]],
-            b: List[np.ndarray[float, np.dtype[Any]]]):
+            w: List[npt.NDArray[np.float64]],
+            b: List[npt.NDArray[np.float64]]):
         self.sequential: Sequential = sequential
         self.set_parameters(w, b)
         
-    def set_parameters(self, w: List[np.ndarray[float, np.dtype[Any]]], b: List[np.ndarray[float, np.dtype[Any]]]):
+    def set_parameters(self, w: List[npt.NDArray[np.float64]], b: List[npt.NDArray[np.float64]]):
         self.w = [np.array(weights, dtype=np.float32) for weights in w]
         self.b = [np.array(bias, dtype=np.float32) for bias in b]
         
     def getParams(self):
         return (self.w, self.b)
 
-    def fordward(self, x: np.ndarray[float, np.dtype[Any]]) -> np.ndarray[float, np.dtype[Any]]:
-      neu: List[None | np.ndarray[float, np.dtype[Any]]] = [None] * len(self.sequential)
+    def fordward(self, x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+      neu: List[None | npt.NDArray[np.float64]] = [None] * len(self.sequential)
       neu[0] = x
       for i in range(1, len(self.sequential)):
         neu[i] = self.sequential[i].activacion(np.dot(neu[i - 1], self.w[i - 1]) + self.b[i]) # type: ignore
@@ -242,24 +245,24 @@ class Model:
     
     
 def __evaluate(
-    neu: List[np.ndarray[float, np.dtype[Any]] | None], 
-    x_sample: np.ndarray[float, np.dtype[Any]], 
-    z: np.ndarray[float, np.dtype[Any]], 
+    neu: List[npt.NDArray[np.float64] | None], 
+    x_sample: npt.NDArray[np.float64], 
+    z: npt.NDArray[np.float64], 
     sequential: Sequential, 
-    w: List[np.ndarray[float, np.dtype[Any]]], 
-    b: List[np.ndarray[float, np.dtype[Any]]]):
+    w: List[npt.NDArray[np.float64]], 
+    b: List[npt.NDArray[np.float64]]):
     neu[0] = x_sample
     for i in range(1, len(sequential)):
         z[i] = np.dot(neu[i - 1], w[i - 1]) + b[i] # type: ignore
         neu[i] = sequential[i].activacion(z[i])
 
 def evaluate(
-    w: List[np.ndarray[float, np.dtype[Any]]], 
-    b: List[np.ndarray[float, np.dtype[Any]]], 
-    x_test: np.ndarray[float, np.dtype[Any]], 
-    y_test: np.ndarray[float, np.dtype[Any]], 
+    w: List[npt.NDArray[np.float64]], 
+    b: List[npt.NDArray[np.float64]], 
+    x_test: npt.NDArray[np.float64], 
+    y_test: npt.NDArray[np.float64], 
     sequential: Sequential, 
-    error: Callable[[np.ndarray[float, np.dtype[Any]], np.ndarray[float, np.dtype[Any]]], float]):
+    error: Callable[[npt.NDArray[np.float64], npt.NDArray[np.float64]], float]):
     correct_predictions = 0
     errors:List[float] = []
     for x_b, y_b in zip(x_test, y_test):
